@@ -1,0 +1,225 @@
+<!-- main_app/templates/main_app/index.html -->
+{% extends 'main_app/base.html' %}
+
+{% block title %}Excel Dropdown System{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8 mx-auto">
+        <h1 class="text-center mb-4">Excel Data Selector</h1>
+        
+        {% if no_excel %}
+            <!-- No Excel file case -->
+            <div class="alert alert-warning">
+                <h4><i class="fas fa-exclamation-triangle"></i> No Excel File Uploaded</h4>
+                <p>Please contact the administrator to upload an Excel file to see the dynamic dropdowns.</p>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Waiting for Excel Data...</h5>
+                </div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label for="default-select" class="form-label">
+                            <strong>{{ default_column.name }}</strong>
+                        </label>
+                        <select id="default-select" class="form-select" disabled>
+                            {% for value in default_column.values %}
+                                <option value="">{{ value }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="alert alert-info mt-3">
+                        <small>This dropdown will be populated automatically when an Excel file is uploaded by the admin.</small>
+                    </div>
+                </div>
+            </div>
+        {% else %}
+            <!-- Excel file exists - Dynamic dropdowns -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        Select Values from: <strong>{{ excel_file.name }}</strong>
+                        <small class="text-muted">(Uploaded: {{ excel_file.uploaded_at|date:"M d, Y H:i" }})</small>
+                    </h5>
+                    <small class="text-muted">{{ columns.count }} columns detected</small>
+                </div>
+                <div class="card-body">
+                    <form id="dropdownForm">
+                        {% for column in columns %}
+                            <div class="dropdown-container">
+                                <label for="column_{{ forloop.counter }}" class="form-label">
+                                    <strong>{{ column.column_name }}</strong>
+                                    <small class="text-muted">({{ column.get_unique_values|length }} options)</small>
+                                </label>
+                                <select class="form-select dropdown-select" 
+                                        id="column_{{ forloop.counter }}" 
+                                        name="{{ column.column_name }}"
+                                        data-column="{{ column.column_name }}">
+                                    <option value="">Select {{ column.column_name }}...</option>
+                                    {% for value in column.get_unique_values %}
+                                        <option value="{{ value }}">{{ value }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        {% empty %}
+                            <div class="alert alert-warning">
+                                No columns found in the Excel file.
+                            </div>
+                        {% endfor %}
+                        
+                        <div class="loading" id="loadingSpinner" style="display: none;">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2">Calculating total...</p>
+                        </div>
+                        
+                        <div class="total-display" id="totalDisplay" style="display: none;">
+                            <h3>Total Value</h3>
+                            <h2 class="text-success" id="totalValue">0</h2>
+                        </div>
+                        
+                        <div class="alert alert-danger" id="errorDisplay" style="display: none;">
+                            <span id="errorMessage"></span>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            
+            <!-- Debug information -->
+            <!-- <div class="mt-4">
+                <button class="btn btn-secondary btn-sm" onclick="testData()">Test Data Loading</button>
+                <div id="debugInfo" class="mt-2" style="font-size: 12px; color: #666;"></div>
+            </div> -->
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if not no_excel %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Only run dropdown logic if Excel file exists
+    const dropdowns = document.querySelectorAll('.dropdown-select');
+    const totalDisplay = document.getElementById('totalDisplay');
+    const totalValue = document.getElementById('totalValue');
+    const errorDisplay = document.getElementById('errorDisplay');
+    const errorMessage = document.getElementById('errorMessage');
+    const loadingSpinner = document.getElementById('loadingSpinner');
+    
+    // Add event listeners to all dropdowns (dynamic number)
+    dropdowns.forEach(dropdown => {
+        dropdown.addEventListener('change', checkAllSelections);
+    });
+    
+    function checkAllSelections() {
+        // Check if all dropdowns have selections (works for any number of columns)
+        const selections = {};
+        let allSelected = true;
+        
+        dropdowns.forEach(dropdown => {
+            const value = dropdown.value;
+            const column = dropdown.dataset.column;
+            
+            if (value === '') {
+                allSelected = false;
+            } else {
+                selections[column] = value;
+            }
+        });
+        
+        // Hide previous results
+        totalDisplay.style.display = 'none';
+        errorDisplay.style.display = 'none';
+        
+        if (allSelected) {
+            // Show loading spinner
+            loadingSpinner.style.display = 'block';
+            
+            // Make AJAX request to get total
+            fetchTotal(selections);
+        }
+    }
+    
+    function fetchTotal(selections) {
+        fetch('{% url "main_app:get_total" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({
+                selections: selections
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            loadingSpinner.style.display = 'none';
+            
+            if (data.success) {
+                totalValue.textContent = data.total;
+                totalDisplay.style.display = 'block';
+            } else {
+                errorMessage.textContent = data.error || 'Unknown error occurred';
+                errorDisplay.style.display = 'block';
+            }
+        })
+        .catch(error => {
+            loadingSpinner.style.display = 'none';
+            errorMessage.textContent = 'Network error: ' + error.message;
+            errorDisplay.style.display = 'block';
+            console.error('Error:', error);
+        });
+    }
+    
+    // Function to get CSRF token
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+});
+
+// Debug function to test data loading (works for any number of columns)
+function testData() {
+    fetch('{% url "main_app:test_data" %}')
+        .then(response => response.json())
+        .then(data => {
+            let columnsInfo = '';
+            data.columns.forEach(col => {
+                columnsInfo += col.name + ' (' + col.values.length + ' values), ';
+            });
+            
+            document.getElementById('debugInfo').innerHTML = 
+                '<strong>Debug Info:</strong><br>' +
+                'File: ' + data.file_name + '<br>' +
+                'Columns: ' + data.columns.length + '<br>' +
+                'Column Names: ' + columnsInfo + '<br>' +
+                'Rows: ' + data.rows_count + '<br>';
+        })
+        .catch(error => {
+            document.getElementById('debugInfo').innerHTML = 'Error: ' + error.message;
+        });
+}
+</script>
+{% else %}
+<script>
+// No Excel file case - minimal script
+function testData() {
+    document.getElementById('debugInfo').innerHTML = 'No Excel file uploaded. Please contact admin.';
+}
+</script>
+{% endif %}
+{% endblock %}
