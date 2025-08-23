@@ -120,15 +120,4 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10 MB
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10 MB
 
-# RENDER PRODUCTION CONFIGURATION
-if os.environ.get('RENDER'):
-    # Production settings
-    DEBUG = False
-    
-    # Static files with WhiteNoise
-    MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
-    STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
-    
-else:
-    # Local development settings
-    DEBUG = True
+DEBUG = False
